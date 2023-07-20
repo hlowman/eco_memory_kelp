@@ -6,3 +6,5 @@ All [nutritional data (carbon:nitrogen)](https://sbclter.msi.ucsb.edu/data/catal
 For additional context regarding the modeling methods employed in this project, please see [Ogle et al. 2015](https://doi.org/10.1111/ele.12399).
 
 Contact code authors at hlowman *at* unr.edu or ana.miller-ter-kuile *at* nau.edu.
+
+![graphical abstract](figures/data_summary_figure.png) 
