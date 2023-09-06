@@ -27,6 +27,13 @@ model{
     }
     
 
+
+# Missing temp data imputing (for now) ------------------------------------
+
+    for(t in 1:n.lag){
+      Temp[i,t] ~ dnorm(mu.tmp[t], tau.tmp[t])
+    }
+    
 # Goodness of fit parameters ----------------------------------------------
 
     #replicated data
@@ -61,5 +68,14 @@ model{
     deltaA[t] ~ dgamma(1,1)
   }
   
+  #MIssing data priors
+  
+  for(t in 1:n.lag){
+    mu.tmp[t] ~ dnorm(0, 1E-2)
+    sig.tmp[t] ~ dunif(0,500)
+    tau.tmp[t] <- pow(sig.tmp[t],-2)
+  }
+  
+
   
 }
