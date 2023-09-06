@@ -141,6 +141,7 @@ mcmcplot(model$samples)
 
 sum <- summary(model$samples)
 
+# Temperature overall effect ----------------------------------------------
 
 #TEMPERUTARE overall effect:
 #get mean value for temperature effect
@@ -173,6 +174,93 @@ ggsave(filename = here("figures",
        height = 6.5,
        width = 6.5,
        units = "in")
+
+
+# Temp partial plot -------------------------------------------------------
+
+
+#pull out medians of weights as vector
+#make climate a matrix of temp lags
+#multiply each by the weight and take the sum for each row (observation)
+#it would be a "monthly weighted z-score"
+#beta for temp
+blT <- as.data.frame(sum$quantiles) %>%
+  rownames_to_column(var = "parm") %>%
+  filter(parm == "b") %>%
+  dplyr::select(`50%`) %>%
+  as_vector()
+
+#b0
+b0 <- as.data.frame(sum$quantiles) %>%
+  rownames_to_column(var = "parm") %>%
+  filter(parm == "b0") %>%
+  dplyr::select(`50%`) %>%
+  as_vector()
+
+#get temparutres on scaled scale
+#use Temp object from model
+
+#make scaled data long format to get mean and sd
+tscale <- data2 %>%
+  dplyr::select(SITE, year, month, mean_Temp_C:mean_Temp_Cl12) %>% #adjust if needed
+  pivot_longer(mean_Temp_C:mean_Temp_Cl12,
+               names_to = "lag",
+               values_to = "temp") 
+
+#get mean and SD of OG data to back-transform stuff
+mean <- mean(tscale$temp, na.rm = T)
+sd <- sd(tscale$temp, na.rm = T)
+
+#get weights per month
+t_wt <- as.data.frame(sum$quantiles) %>%
+  rownames_to_column(var = "parameter") %>%
+  filter(str_detect(parameter, "wA")) %>%
+  dplyr::select(`50%`) %>%
+  as_vector()
+
+#get tmax dataset
+regT <- data2 %>%
+  dplyr::select(SITE, year, month, mean_CN, mean_Temp_C:mean_Temp_Cl12)
+
+#multiply months by their weights
+regT$TAnt <- apply(Temp, MARGIN = 1, FUN = function(x){sum(x*t_wt)})
+
+#revert Tmax to OG data scale
+regT <- regT %>%
+  mutate(Temp = TAnt*sd + mean)
+
+#regression prediction for Temperature
+regT <- regT %>%
+  mutate(reg = b0 + blT*TAnt,
+         exp_reg = exp(reg))
+# xscaled = (x – x̄) / s
+# xscaled*sd + mean = x
+xlab <-  expression("Weighted temperature " ( degree*C))
+
+temp_pred <- ggplot(regT) +
+    geom_point(aes(x = Temp, y = mean_CN),
+               fill = "#e34a33", color = "black", shape = 21, alpha = 0.5) +
+    geom_line(aes(x = Temp, y = exp_reg),
+              lwd = 2, color = "black") +
+    geom_line(aes(x = Temp, y = exp_reg), 
+              color = "#e34a33", lwd = 1.5) +
+    labs(x = xlab,
+         y = "Kelp C:N") +
+  theme_bw() +
+  theme(axis.text = element_text(size = 12),
+        axis.title = element_text(size = 15)) 
+
+
+#export this figure
+ggsave(filename = here("figures",
+                       "temp_predicted.png"),
+       plot = temp_pred,
+       height = 6.5,
+       width = 6.5,
+       units = "in")
+
+# Weights -----------------------------------------------------------------
+
 
 #get weights summarised
 sum1 <- as.data.frame(sum$quantiles) %>%
