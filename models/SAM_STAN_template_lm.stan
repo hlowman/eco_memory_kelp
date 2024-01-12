@@ -37,5 +37,6 @@ model {
   b ~ normal(0, 1E-2); // covariate parameter prior
   tau ~ gamma(0.001, 0.001); // error
   // remember, script MUST end in a blank line
+  
 }
 
