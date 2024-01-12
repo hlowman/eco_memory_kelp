@@ -15,7 +15,10 @@ library(here)
 library(tidyverse)
 library(rstan)
 library(shinystan)
+library(tidybayes)
+library(brms)
 library(bayesplot)
+library(modelsummary)
 library(data.table)
 library(naniar)
 
@@ -177,26 +180,41 @@ stan_sam_run <- stan(file = "models/SAM_STAN_template.stan",
                       iter = 5000,
                       control = list(max_treedepth = 12))
 
-# Examine model convergence
-shinystan::launch_shinystan(stan_test_run)
-# All chains appear well-mixed and no signs of divergences.
+# Ran on Pinyon, started at 4:07PM.
+# No signs of divergences, yay!
+
+saveRDS(stan_sam_run, here("model_summaries", "STAN_output_list_011224.RDS"))
 
 # Examine summaries of the estimates.
-stan_test_data <- summary(stan_test_run,
-                          pars = c("b", "b0", "tau"),
+stan_sam_summary <- summary(stan_sam_run,
+                          pars = c("b0", "b","wA[1]", "wA[2]", "wA[3]", 
+                                   "wA[4]", "wA[5]", "wA[6]", 
+                                   "wA[7]", "wA[8]", "wA[9]", "wA[10]", 
+                                   "wA[11]", "wA[12]", "wA[13]", "sigma"),
                           probs = c(0.025, 0.5, 0.975))$summary # 2.5% and 97.5% percentiles
 # Rhat values also look pretty good.
 
-# Fun plotting ideas at: https://mc-stan.org/bayesplot/reference/MCMC-intervals.html
-color_scheme_set("teal")
-mcmc_areas(stan_test_run,
-           pars = c("b", "b0"),
+saveRDS(stan_sam_summary, here("model_summaries", "STAN_output_summary_011224.RDS"))
+
+# Quick plot of model values.
+plot(stan_sam_run, pars = c("b0", "b",
+                      "wA[1]", "wA[2]", "wA[3]", "wA[4]", "wA[5]", "wA[6]", 
+                      "wA[7]", "wA[8]", "wA[9]", "wA[10]", "wA[11]", "wA[12]",
+                      "wA[13]", "sigma"))
+
+# More fun plot.
+color_scheme_set("brightblue")
+mcmc_intervals(stan_sam_run,
+           pars = c("b", "wA[1]", "wA[2]", "wA[3]", 
+                    "wA[4]", "wA[5]", "wA[6]", 
+                    "wA[7]", "wA[8]", "wA[9]", "wA[10]", 
+                    "wA[11]", "wA[12]", "wA[13]"),
            point_est = "median",
-           prob = 0.95) +
+           prob = 0.5,
+           prob_outer = 0.95) +
   labs(
     title = "Posterior distributions",
     subtitle = "with medians and 95% intervals"
   )
-
 
 # End of script.
