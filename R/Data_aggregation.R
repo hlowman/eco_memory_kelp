@@ -41,7 +41,7 @@ dat_all <- dat_agg %>%
   select(SITE, year, month, day, mean_C, mean_N, mean_CN, mean_Temp_C)
 
 # And export for use in modeling.
-saveRDS(dat_all,"dat_working/CN_temp_monthly_20230720.rds")
+# saveRDS(dat_all,"dat_working/CN_temp_monthly_20230720.rds")
 
 # And making some quick plots for the README of the github page.
 (fig1 <- ggplot(dat_agg, aes(x = date, y = mean_CN)) +
@@ -83,6 +83,36 @@ saveRDS(dat_all,"dat_working/CN_temp_monthly_20230720.rds")
 # Export figure.
 # ggsave(("figures/data_summary_figure.png"),
 #        width = 25,
+#        height = 20,
+#        units = "cm"
+# )
+
+# And making some additional figures for OSM presentation.
+(fig6 <- ggplot(dat_agg, aes(x = date, y = mean_CN)) +
+    geom_point(alpha = 0.75, size = 3, color = "#2A3927") +
+    labs(x = "Date", y = "Carbon : Nitrogen") +
+    theme_bw() +
+    theme(text = element_text(size = 20)))
+
+(fig7 <- ggplot(dat_agg %>%
+                  mutate(month_f = factor(month)), aes(x = month_f, y = mean_CN)) +
+    geom_boxplot(aes(fill = month_f)) +
+    scale_fill_manual(values = cal_palette("lake", n = 12, type = "continuous")) +
+    labs(x = "Month", y = "Carbon : Nitrogen") +
+    theme_bw() +
+    theme(text = element_text(size = 20),
+          legend.position = "none"))
+
+(fig8 <- ggplot(dat_agg, aes(x = mean_Temp_C, y = mean_CN)) +
+    geom_point(alpha = 0.75, size = 3, color = "#6EA88D") +
+    labs(x = "Temperature (°C)", y = "Carbon : Nitrogen") +
+    theme_bw())
+
+(fig_osm <- fig6 / fig7)
+
+# Export figure.
+# ggsave(("figures/data_summary_figure_osm_020524.png"),
+#        width = 30,
 #        height = 20,
 #        units = "cm"
 # )

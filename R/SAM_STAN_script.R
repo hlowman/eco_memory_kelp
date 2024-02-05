@@ -124,7 +124,7 @@ data2_sam <- data_repNA_sam %>%
   left_join(Temp_lags_sam, by = c("SITE", "year", "month",
                               "Temp_gapfilled"))  
 
-saveRDS(data2_sam, here("dat_working", "SAM_structured_input_data_STAN.RDS"))
+#saveRDS(data2_sam, here("dat_working", "SAM_structured_input_data_STAN.RDS"))
 
 # Assemble data for model
 
@@ -171,7 +171,7 @@ data_stan_sam <- list(
   #prior
   alpha = c(rep(1/13, 13)))
 
-saveRDS(data_stan_sam, here("model_summaries", "STAN_input_list.RDS"))
+#saveRDS(data_stan_sam, here("model_summaries", "STAN_input_list.RDS"))
 
 # Fit SAM model.
 stan_sam_run <- stan(file = "models/SAM_STAN_template.stan",
@@ -182,8 +182,8 @@ stan_sam_run <- stan(file = "models/SAM_STAN_template.stan",
 
 # Ran on Pinyon, started at 4:07PM.
 # No signs of divergences, yay!
-
-saveRDS(stan_sam_run, here("model_summaries", "STAN_output_list_011224.RDS"))
+# Saved only on Pinyon.
+# saveRDS(stan_sam_run, here("model_summaries", "STAN_output_list_011224.RDS"))
 
 # Examine summaries of the estimates.
 stan_sam_summary <- summary(stan_sam_run,
@@ -194,7 +194,7 @@ stan_sam_summary <- summary(stan_sam_run,
                           probs = c(0.025, 0.5, 0.975))$summary # 2.5% and 97.5% percentiles
 # Rhat values also look pretty good.
 
-saveRDS(stan_sam_summary, here("model_summaries", "STAN_output_summary_011224.RDS"))
+#saveRDS(stan_sam_summary, here("model_summaries", "STAN_output_summary_011224.RDS"))
 
 # Quick plot of model values.
 plot(stan_sam_run, pars = c("b0", "b",
@@ -349,5 +349,165 @@ plot(stan_sam_run_2y, pars = c("wA[1]", "wA[2]", "wA[3]", "wA[4]", "wA[5]", "wA[
                             "wA[13]", "wA[14]", "wA[15]", "wA[16]", 
                             "wA[17]", "wA[18]", "wA[19]", "wA[20]", "wA[21]", 
                             "wA[22]", "wA[23]", "wA[24]", "wA[25]"))
+
+# Will proceed with one-year formulation since kelp tagging work suggests the
+# average persistence of kelp is 234 +/- 3 days or roughly 7 months.
+
+#### SAM Model Fit 8mo ####
+
+# From Ana's JAGS script, need to make the necessary data transformations.
+# And going to replace NAs with mean values for the time being.
+data_noNA_sam <- data %>%
+  # replace NAs with mean
+  mutate(CN_gapfilled = replace_na(mean_CN, mean(mean_CN, na.rm = TRUE))) %>%
+  mutate(Temp_gapfilled = replace_na(mean_Temp_C, mean(mean_Temp_C, na.rm = TRUE)))
+
+# OPTION 2: Replace w/ values from normal distribution outside the model script,
+# as Ana did in her model script. rnorm(mu, sigma)
+# Could also consider differences among sites/within years.
+cn_dist <- rnorm(100, 
+                 mean(data$mean_CN, na.rm = TRUE),
+                 sd(data$mean_CN, na.rm = TRUE))
+
+temp_dist <- rnorm(100,
+                   mean(data$mean_Temp_C, na.rm = TRUE),
+                   sd(data$mean_CN, na.rm = TRUE))
+
+data_repNA_sam <- data %>%
+  # replace NAs with randomly generated values from normal dist.
+  mutate(CN_gapfilled = replace_na(mean_CN, sample(cn_dist, 1))) %>%
+  mutate(Temp_gapfilled = replace_na(mean_Temp_C, sample(temp_dist,1)))
+
+# Create new dataset of lags using gapfilled data.
+Temp_lags_sam <- data_repNA_sam %>%
+  dplyr::select(SITE, year, month, Temp_gapfilled) %>%
+  group_by(SITE) %>%
+  arrange(SITE, year, month) %>%
+  #this creates a column for every lag 1:12 months ago
+  do(data.frame(., setNames(shift(.$Temp_gapfilled, 1:8), c("mean_Temp_Cl1",
+                                                             "mean_Temp_Cl2",
+                                                             "mean_Temp_Cl3",
+                                                             "mean_Temp_Cl4",
+                                                             "mean_Temp_Cl5",
+                                                             "mean_Temp_Cl6",
+                                                             "mean_Temp_Cl7",
+                                                             "mean_Temp_Cl8")))) %>%
+  ungroup()
+
+#join back together so each observation has its lags
+data4_sam <- data_repNA_sam %>%
+  left_join(Temp_lags_sam, by = c("SITE", "year", "month",
+                                  "Temp_gapfilled"))  
+
+# saveRDS(data4_sam, here("dat_working", "SAM_structured_input_data_8mo_STAN.RDS"))
+
+# Assemble data for model
+
+# Response data
+
+# base dataset creation
+# will make it easier to omit first year of data from CN and Temp data
+data4_sam_scaled <- data4_sam %>%
+  pivot_longer(Temp_gapfilled:mean_Temp_Cl8,
+               names_to = "lag",
+               values_to = "temp") %>%
+  # scale all temps to each other
+  mutate(temp = scale(temp)) %>%
+  pivot_wider(names_from = lag,
+              values_from = temp) %>%
+  # remove first year of data from all three sites for which
+  # we do not have proper lagged temperature data available
+  drop_na(mean_Temp_Cl1:mean_Temp_Cl8)
+
+# nutritional content (C:N) data
+y <- as.vector(log(data4_sam_scaled$CN_gapfilled))
+
+# temperature lag matrix 
+Temp <- data4_sam_scaled %>%
+  dplyr::select(Temp_gapfilled:mean_Temp_Cl8) %>%
+  #make matrix
+  as.matrix()
+
+# Loop indices
+# number of observations
+nrows <- nrow(data4_sam_scaled)
+# number of months included in each antecedent summation
+nlag <- 9
+
+# Prep data for STAN as a list
+data_stan_sam <- list(
+  #indices for loops
+  nrows = nrows,
+  nlag = nlag,
+  #reponse data
+  CN = y,
+  #temperature data
+  Temp = Temp,
+  #prior
+  alpha = c(rep(1/9, 9)))
+
+# saveRDS(data_stan_sam, here("model_summaries", "STAN_input_list_8mo.RDS"))
+
+# Fit SAM model.
+stan_sam_run4 <- stan(file = "models/SAM_STAN_template.stan",
+                     data = data_stan_sam,
+                     chains = 3,
+                     iter = 5000,
+                     control = list(max_treedepth = 12))
+
+saveRDS(stan_sam_run4, here("model_summaries", "STAN_output_list_020524.RDS"))
+
+# Examine summaries of the estimates.
+stan_sam_summary4 <- summary(stan_sam_run4,
+                            pars = c("b0", "b","wA[1]", "wA[2]", "wA[3]", 
+                                     "wA[4]", "wA[5]", "wA[6]", 
+                                     "wA[7]", "wA[8]", "wA[9]", "sigma"),
+                            probs = c(0.025, 0.5, 0.975))$summary # 2.5% and 97.5% percentiles
+# Rhat values also look pretty good.
+
+saveRDS(stan_sam_summary4, here("model_summaries", "STAN_output_summary_020524.RDS"))
+
+# Quick plot of model values.
+plot(stan_sam_run4, pars = c("b0", "b",
+                            "wA[1]", "wA[2]", "wA[3]", "wA[4]", "wA[5]", "wA[6]", 
+                            "wA[7]", "wA[8]", "wA[9]", "sigma"))
+
+# Creating a figure for the OSM presentation.
+
+stan_sam_summary4 <- cbind(rownames(stan_sam_summary4), 
+                          data.frame(stan_sam_summary4, row.names = NULL)) %>%
+  # add columns for easier plotting
+  mutate(include = case_when(`rownames(stan_sam_summary4)` %in% c("b0", "sigma") ~ "NO",
+                             TRUE ~ "YES")) %>%
+  mutate(lag = factor(case_when(`rownames(stan_sam_summary4)` == "wA[1]" ~ "0",
+                                `rownames(stan_sam_summary4)` == "wA[2]" ~ "1",
+                                `rownames(stan_sam_summary4)` == "wA[3]" ~ "2",
+                                `rownames(stan_sam_summary4)` == "wA[4]" ~ "3",
+                                `rownames(stan_sam_summary4)` == "wA[5]" ~ "4",
+                                `rownames(stan_sam_summary4)` == "wA[6]" ~ "5",
+                                `rownames(stan_sam_summary4)` == "wA[7]" ~ "6",
+                                `rownames(stan_sam_summary4)` == "wA[8]" ~ "7",
+                                `rownames(stan_sam_summary4)` == "wA[9]" ~ "8",
+                                `rownames(stan_sam_summary4)` == "b" ~ "beta",
+                                TRUE ~ NA),
+                      levels = c("0", "1", "2", "3", "4", "5", "6",
+                                 "7", "8", "9", "beta")))
+
+(fig_osm <- ggplot(stan_sam_summary4 %>%
+                     filter(include == "YES"), aes(x = lag, y = X50.))) +
+  geom_point(size = 5, color = "#6EA88D") +
+  geom_linerange(aes(ymin = X2.5., ymax = X97.5.), 
+                 color = "#6EA88D", alpha = 0.8, linewidth = 1) +
+  geom_hline(yintercept = 0.11, linetype = "dashed") +
+  labs(x = "Lag (Months)", y = "Weight") +
+  theme_bw() +
+  theme(text = element_text(size = 20))
+
+# Export figure.
+# ggsave(("figures/data_8momodel_summary_osm_020524.png"),
+#        width = 20,
+#        height = 15,
+#        units = "cm"
+# )
 
 # End of script.
